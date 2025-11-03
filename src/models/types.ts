@@ -171,3 +171,25 @@ export interface WorkerRecord {
   modifiedOn: string | null;
   lastSynced: string;
 }
+
+// 脚本模板
+export interface ScriptTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateTemplateRequest {
+  name: string;
+  description?: string;
+  content: string;
+}
+
+export interface UpdateTemplateRequest {
+  name?: string;
+  description?: string;
+  content?: string;
+}

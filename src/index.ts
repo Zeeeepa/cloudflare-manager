@@ -11,6 +11,7 @@ import { createAuthRouter } from './routes/auth.js';
 import { createAccountsRouter } from './routes/accounts.js';
 import { createJobsRouter } from './routes/jobs.js';
 import { createWorkersRouter } from './routes/workers.js';
+import { createTemplatesRouter } from './routes/templates.js';
 import { JobExecutor } from './services/JobExecutor.js';
 import { WorkersService } from './services/WorkersService.js';
 
@@ -56,6 +57,7 @@ app.use('/api/auth', createAuthRouter(db));
 app.use('/api/accounts', authenticateToken, createAccountsRouter(db));
 app.use('/api/jobs', authenticateToken, createJobsRouter(db, jobExecutor));
 app.use('/api/workers', authenticateToken, createWorkersRouter(workersService));
+app.use('/api/templates', authenticateToken, createTemplatesRouter(db));
 
 // 静态文件服务（前端）
 const publicPath = path.join(__dirname, '..', 'public');

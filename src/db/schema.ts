@@ -96,6 +96,87 @@ export function initDatabase(dbPath: string): Database.Database {
     console.error('Migration error (last_error):', error);
   }
 
+  // 自动迁移4：插入script_templates初始数据
+  try {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='script_templates'").all();
+    if (tables.length > 0) {
+      // 检查是否已有数据
+      const count = db.prepare("SELECT COUNT(*) as count FROM script_templates").get() as { count: number };
+
+      if (count.count === 0) {
+        console.log('Running migration: Inserting initial script templates...');
+
+        const insertTemplate = db.prepare(`
+          INSERT INTO script_templates (id, name, description, content, created_at, updated_at)
+          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `);
+
+        // Hello World 模板
+        insertTemplate.run('hello-world', 'Hello World', '基础模板，返回简单文本响应', `export default {
+  async fetch(request, env, ctx) {
+    return new Response('Hello World!', {
+      headers: { 'Content-Type': 'text/plain' }
+    });
+  }
+};`);
+
+        // 反向代理模板
+        insertTemplate.run('reverse-proxy', '反向代理/转发', '转发请求到目标服务器，可修改请求头和响应头', `export default {
+  async fetch(request, env, ctx) {
+    const targetUrl = 'https://example.com';
+    const url = new URL(request.url);
+
+    // 构建目标URL
+    const proxyUrl = new URL(url.pathname + url.search, targetUrl);
+
+    // 复制请求，修改目标URL
+    const modifiedRequest = new Request(proxyUrl, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body
+    });
+
+    // 转发请求
+    const response = await fetch(modifiedRequest);
+
+    // 可选：修改响应头
+    const modifiedResponse = new Response(response.body, response);
+    modifiedResponse.headers.set('X-Proxied-By', 'Cloudflare-Worker');
+
+    return modifiedResponse;
+  }
+};`);
+
+        // API Gateway 模板
+        insertTemplate.run('api-gateway', 'API Gateway', '基础的API路由分发框架，支持不同路径处理', `export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+
+    // 路由分发
+    switch (url.pathname) {
+      case '/api/health':
+        return new Response(JSON.stringify({ status: 'ok' }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+      case '/api/time':
+        return new Response(JSON.stringify({ time: new Date().toISOString() }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+      default:
+        return new Response('Not Found', { status: 404 });
+    }
+  }
+};`);
+
+        console.log('Migration completed: Inserted 3 initial templates');
+      }
+    }
+  } catch (error) {
+    console.error('Migration error (script_templates seed data):', error);
+  }
+
   // 系统配置表（存储主密码hash）
   db.exec(`
     CREATE TABLE IF NOT EXISTS system_config (
