@@ -69,22 +69,139 @@ update_system() {
 
 # Install system dependencies
 install_system_deps() {
-    log_info "Installing system dependencies..."
+    log_info "Installing comprehensive system dependencies..."
     
-    # Essential build tools
+    # Core build tools and compilers
+    log_info "Installing build tools and compilers..."
+    sudo apt-get install -y -qq \
+        build-essential \
+        gcc \
+        g++ \
+        make \
+        cmake \
+        autoconf \
+        automake \
+        libtool \
+        pkg-config
+    
+    # Network and download tools
+    log_info "Installing network tools..."
     sudo apt-get install -y -qq \
         curl \
         wget \
         git \
-        build-essential \
-        libsqlite3-dev \
-        python3 \
-        pkg-config \
+        net-tools \
+        netcat \
+        telnet \
+        nmap \
+        dnsutils \
+        iputils-ping \
+        traceroute
+    
+    # SSL/TLS and security
+    log_info "Installing SSL/TLS libraries..."
+    sudo apt-get install -y -qq \
+        openssl \
+        libssl-dev \
         ca-certificates \
         gnupg \
         lsb-release
     
-    log_success "System dependencies installed"
+    # Python and development tools
+    log_info "Installing Python development tools..."
+    sudo apt-get install -y -qq \
+        python3 \
+        python3-pip \
+        python3-dev \
+        python3-venv \
+        python3-setuptools \
+        python3-wheel
+    
+    # Database tools
+    log_info "Installing database tools..."
+    sudo apt-get install -y -qq \
+        sqlite3 \
+        libsqlite3-dev \
+        postgresql-client \
+        mysql-client \
+        redis-tools
+    
+    # Compression and archive tools
+    log_info "Installing compression tools..."
+    sudo apt-get install -y -qq \
+        zip \
+        unzip \
+        tar \
+        gzip \
+        bzip2 \
+        xz-utils \
+        p7zip-full \
+        rar \
+        unrar
+    
+    # Text processing and utilities
+    log_info "Installing text processing tools..."
+    sudo apt-get install -y -qq \
+        vim \
+        nano \
+        jq \
+        yq \
+        sed \
+        awk \
+        grep \
+        tree \
+        htop \
+        tmux \
+        screen
+    
+    # Version control
+    log_info "Installing version control tools..."
+    sudo apt-get install -y -qq \
+        git \
+        git-lfs \
+        subversion
+    
+    # Development libraries
+    log_info "Installing development libraries..."
+    sudo apt-get install -y -qq \
+        libffi-dev \
+        libxml2-dev \
+        libxslt1-dev \
+        libyaml-dev \
+        libreadline-dev \
+        zlib1g-dev \
+        libbz2-dev \
+        libncurses5-dev \
+        libncursesw5-dev \
+        libgdbm-dev \
+        liblzma-dev \
+        uuid-dev
+    
+    # System monitoring and debugging
+    log_info "Installing system monitoring tools..."
+    sudo apt-get install -y -qq \
+        htop \
+        iotop \
+        iftop \
+        nethogs \
+        sysstat \
+        strace \
+        ltrace \
+        lsof
+    
+    # Container and virtualization tools (optional)
+    log_info "Installing container tools (optional)..."
+    sudo apt-get install -y -qq \
+        docker.io \
+        docker-compose \
+        podman || log_warning "Container tools installation failed (non-critical)"
+    
+    # Add current user to docker group if docker installed
+    if command -v docker &> /dev/null; then
+        sudo usermod -aG docker $USER || true
+    fi
+    
+    log_success "Comprehensive system dependencies installed"
 }
 
 # Install Node.js (using NodeSource)
@@ -114,6 +231,41 @@ install_nodejs() {
     log_success "npm installed: v$NPM_VERSION"
 }
 
+# Install global Node.js tools
+install_node_tools() {
+    log_info "Installing global Node.js development tools..."
+    
+    # Essential tools
+    sudo npm install -g \
+        typescript \
+        ts-node \
+        nodemon \
+        npm-check-updates \
+        yarn \
+        pnpm
+    
+    # Linting and formatting
+    sudo npm install -g \
+        eslint \
+        prettier \
+        tslint
+    
+    # Build and bundling tools
+    sudo npm install -g \
+        webpack \
+        webpack-cli \
+        vite \
+        rollup
+    
+    # Testing frameworks
+    sudo npm install -g \
+        jest \
+        mocha \
+        vitest
+    
+    log_success "Global Node.js tools installed"
+}
+
 # Install PM2 process manager
 install_pm2() {
     log_info "Installing PM2 process manager..."
@@ -124,6 +276,14 @@ install_pm2() {
     fi
     
     sudo npm install -g pm2
+    
+    # Install PM2 log rotation
+    pm2 install pm2-logrotate || true
+    
+    # Configure log rotation
+    pm2 set pm2-logrotate:max_size 10M || true
+    pm2 set pm2-logrotate:retain 7 || true
+    pm2 set pm2-logrotate:compress true || true
     
     # Setup PM2 startup script
     pm2 startup systemd -u $USER --hp $HOME | grep -v 'PM2' | sudo bash || true
@@ -285,6 +445,124 @@ start_application() {
     log_success "Application started"
 }
 
+# Install additional development tools
+install_additional_tools() {
+    log_info "Installing additional development tools..."
+    
+    # Install GitHub CLI if not present
+    if ! command -v gh &> /dev/null; then
+        log_info "Installing GitHub CLI..."
+        type -p curl >/dev/null || sudo apt install curl -y
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+        sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+        sudo apt update -qq
+        sudo apt install gh -y -qq
+        log_success "GitHub CLI installed"
+    else
+        log_warning "GitHub CLI already installed"
+    fi
+    
+    # Install lazygit (if available)
+    log_info "Installing lazygit..."
+    LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep -Po '"tag_name": "v\K[^"]*')
+    if [ -n "$LAZYGIT_VERSION" ]; then
+        curl -sLo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz"
+        tar xf lazygit.tar.gz lazygit
+        sudo install lazygit /usr/local/bin
+        rm lazygit lazygit.tar.gz
+        log_success "lazygit installed"
+    else
+        log_warning "Could not determine lazygit version, skipping"
+    fi
+    
+    # Install bat (better cat)
+    log_info "Installing bat (better cat)..."
+    sudo apt-get install -y -qq bat || log_warning "bat installation failed"
+    
+    # Create bat alias if installed as batcat
+    if command -v batcat &> /dev/null && ! command -v bat &> /dev/null; then
+        mkdir -p ~/.local/bin
+        ln -s /usr/bin/batcat ~/.local/bin/bat || true
+    fi
+    
+    # Install fd (better find)
+    log_info "Installing fd-find..."
+    sudo apt-get install -y -qq fd-find || log_warning "fd-find installation failed"
+    
+    # Install ripgrep (better grep)
+    log_info "Installing ripgrep..."
+    sudo apt-get install -y -qq ripgrep || log_warning "ripgrep installation failed"
+    
+    # Install exa (better ls)
+    log_info "Installing exa..."
+    sudo apt-get install -y -qq exa || log_warning "exa installation failed"
+    
+    # Install httpie (better curl)
+    log_info "Installing httpie..."
+    sudo apt-get install -y -qq httpie || log_warning "httpie installation failed"
+    
+    # Install tldr (simplified man pages)
+    log_info "Installing tldr..."
+    sudo npm install -g tldr || log_warning "tldr installation failed"
+    
+    # Install nvm (Node Version Manager) for easy Node.js switching
+    log_info "Installing nvm..."
+    if [ ! -d "$HOME/.nvm" ]; then
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash || log_warning "nvm installation failed"
+        log_success "nvm installed"
+    else
+        log_warning "nvm already installed"
+    fi
+    
+    log_success "Additional development tools installed"
+}
+
+# Install monitoring and logging tools
+install_monitoring_tools() {
+    log_info "Installing monitoring and logging tools..."
+    
+    # Install Prometheus node exporter (optional)
+    log_info "Installing Prometheus node exporter..."
+    sudo apt-get install -y -qq prometheus-node-exporter || log_warning "Prometheus node exporter installation failed (non-critical)"
+    
+    # Install netdata (system monitoring)
+    log_info "Installing netdata (this may take a while)..."
+    bash <(curl -Ss https://my-netdata.io/kickstart.sh) --dont-wait --disable-telemetry || log_warning "Netdata installation failed (non-critical)"
+    
+    # Install ctop (container monitoring)
+    if command -v docker &> /dev/null; then
+        log_info "Installing ctop..."
+        sudo wget https://github.com/bcicen/ctop/releases/download/v0.7.7/ctop-0.7.7-linux-amd64 -O /usr/local/bin/ctop || true
+        sudo chmod +x /usr/local/bin/ctop || true
+    fi
+    
+    log_success "Monitoring tools installed"
+}
+
+# Install database tools and clients
+install_database_tools() {
+    log_info "Installing additional database tools..."
+    
+    # SQLite browser/manager
+    log_info "Installing sqlite utilities..."
+    sudo apt-get install -y -qq sqlite3 sqlitebrowser || log_warning "SQLite tools installation partial"
+    
+    # Install pgcli (better postgres CLI)
+    log_info "Installing pgcli..."
+    sudo pip3 install pgcli || log_warning "pgcli installation failed"
+    
+    # Install mycli (better mysql CLI)
+    log_info "Installing mycli..."
+    sudo pip3 install mycli || log_warning "mycli installation failed"
+    
+    # Install redis-cli tools
+    log_info "Installing redis tools..."
+    sudo apt-get install -y -qq redis-tools || log_warning "redis-tools installation failed"
+    
+    log_success "Database tools installed"
+}
+
 # Create systemd service (alternative to PM2)
 create_systemd_service() {
     log_info "Creating systemd service (alternative method)..."
@@ -320,6 +598,76 @@ EOF
     log_info "To use systemd instead of PM2:"
     log_info "  sudo systemctl enable cloudflare-manager"
     log_info "  sudo systemctl start cloudflare-manager"
+}
+
+# Show installed tools summary
+show_installed_tools() {
+    echo ""
+    echo -e "${GREEN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║                                                           ║${NC}"
+    echo -e "${GREEN}║          📦 Installed Tools Summary 📦                    ║${NC}"
+    echo -e "${GREEN}║                                                           ║${NC}"
+    echo -e "${GREEN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
+    log_info "Core Tools:"
+    command -v node &> /dev/null && echo "  ✓ Node.js: $(node -v)"
+    command -v npm &> /dev/null && echo "  ✓ npm: v$(npm -v)"
+    command -v pm2 &> /dev/null && echo "  ✓ PM2: v$(pm2 -v)"
+    command -v python3 &> /dev/null && echo "  ✓ Python: $(python3 --version)"
+    command -v git &> /dev/null && echo "  ✓ Git: $(git --version)"
+    echo ""
+    
+    log_info "Node.js Tools:"
+    command -v typescript &> /dev/null && echo "  ✓ TypeScript"
+    command -v yarn &> /dev/null && echo "  ✓ Yarn"
+    command -v pnpm &> /dev/null && echo "  ✓ pnpm"
+    command -v nodemon &> /dev/null && echo "  ✓ Nodemon"
+    command -v eslint &> /dev/null && echo "  ✓ ESLint"
+    command -v prettier &> /dev/null && echo "  ✓ Prettier"
+    echo ""
+    
+    log_info "Database Tools:"
+    command -v sqlite3 &> /dev/null && echo "  ✓ SQLite3: $(sqlite3 --version | cut -d' ' -f1)"
+    command -v psql &> /dev/null && echo "  ✓ PostgreSQL Client"
+    command -v mysql &> /dev/null && echo "  ✓ MySQL Client"
+    command -v redis-cli &> /dev/null && echo "  ✓ Redis CLI"
+    command -v pgcli &> /dev/null && echo "  ✓ pgcli (Better PostgreSQL CLI)"
+    command -v mycli &> /dev/null && echo "  ✓ mycli (Better MySQL CLI)"
+    echo ""
+    
+    log_info "Development Tools:"
+    command -v gh &> /dev/null && echo "  ✓ GitHub CLI"
+    command -v lazygit &> /dev/null && echo "  ✓ lazygit"
+    command -v docker &> /dev/null && echo "  ✓ Docker: $(docker --version | cut -d' ' -f3 | tr -d ',')"
+    command -v docker-compose &> /dev/null && echo "  ✓ Docker Compose"
+    echo ""
+    
+    log_info "Modern CLI Tools:"
+    command -v bat &> /dev/null && echo "  ✓ bat (Better cat)"
+    command -v batcat &> /dev/null && echo "  ✓ batcat (Better cat)"
+    command -v rg &> /dev/null && echo "  ✓ ripgrep (Better grep)"
+    command -v fd &> /dev/null && echo "  ✓ fd (Better find)"
+    command -v exa &> /dev/null && echo "  ✓ exa (Better ls)"
+    command -v http &> /dev/null && echo "  ✓ httpie (Better curl)"
+    command -v tldr &> /dev/null && echo "  ✓ tldr (Simplified man pages)"
+    echo ""
+    
+    log_info "Monitoring Tools:"
+    command -v htop &> /dev/null && echo "  ✓ htop"
+    command -v iotop &> /dev/null && echo "  ✓ iotop"
+    command -v nethogs &> /dev/null && echo "  ✓ nethogs"
+    command -v ctop &> /dev/null && echo "  ✓ ctop (Container monitoring)"
+    systemctl is-active --quiet netdata && echo "  ✓ netdata (System monitoring)"
+    echo ""
+    
+    log_info "Text Editors & Utilities:"
+    command -v vim &> /dev/null && echo "  ✓ vim"
+    command -v nano &> /dev/null && echo "  ✓ nano"
+    command -v jq &> /dev/null && echo "  ✓ jq (JSON processor)"
+    command -v tree &> /dev/null && echo "  ✓ tree"
+    command -v tmux &> /dev/null && echo "  ✓ tmux"
+    echo ""
 }
 
 # Display status and access information
@@ -380,15 +728,28 @@ show_status() {
 main() {
     print_banner
     
-    log_info "Starting deployment process..."
+    log_info "Starting COMPREHENSIVE deployment process..."
+    log_warning "This will install ALL possible dependencies and may take 10-15 minutes"
     echo ""
+    
+    # Ask user for confirmation
+    read -p "Continue with full installation? (Y/n): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        log_info "Installation cancelled by user"
+        exit 0
+    fi
     
     # Execute deployment steps
     check_wsl2
     update_system
     install_system_deps
     install_nodejs
+    install_node_tools
     install_pm2
+    install_additional_tools
+    install_database_tools
+    install_monitoring_tools
     setup_app_directory
     install_app_deps
     setup_environment
@@ -402,9 +763,11 @@ main() {
     # Show final status
     show_status
     
-    log_success "Deployment completed successfully!"
+    log_success "Comprehensive deployment completed successfully!"
+    
+    # Show installed tools summary
+    show_installed_tools
 }
 
 # Run main function
 main
-
