@@ -135,9 +135,10 @@ install_system_deps() {
         gzip \
         bzip2 \
         xz-utils \
-        p7zip-full \
-        rar \
-        unrar
+        p7zip-full
+    
+    # Install rar/unrar separately (may not be available in free repos)
+    sudo apt-get install -y -qq unrar-free 2>/dev/null || log_warning "rar/unrar not available (proprietary)"
     
     # Text processing and utilities
     log_info "Installing text processing tools..."
