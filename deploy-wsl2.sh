@@ -404,7 +404,7 @@ init_database() {
 setup_pm2_config() {
     log_info "Creating PM2 ecosystem configuration..."
     
-    cat > ecosystem.config.js << 'EOF'
+    cat > ecosystem.config.cjs << 'EOF'
 module.exports = {
   apps: [{
     name: 'cloudflare-manager',
@@ -438,7 +438,7 @@ start_application() {
     pm2 delete cloudflare-manager 2>/dev/null || true
     
     # Start the application
-    pm2 start ecosystem.config.js
+    pm2 start ecosystem.config.cjs
     
     # Save PM2 process list
     pm2 save
