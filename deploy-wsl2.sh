@@ -123,7 +123,7 @@ install_system_deps() {
         sqlite3 \
         libsqlite3-dev \
         postgresql-client \
-        mysql-client \
+        default-mysql-client \
         redis-tools
     
     # Compression and archive tools
