@@ -91,7 +91,7 @@ install_system_deps() {
         wget \
         git \
         net-tools \
-        netcat \
+        netcat-openbsd \
         telnet \
         nmap \
         dnsutils \
@@ -145,7 +145,6 @@ install_system_deps() {
         vim \
         nano \
         jq \
-        yq \
         sed \
         awk \
         grep \
@@ -153,6 +152,9 @@ install_system_deps() {
         htop \
         tmux \
         screen
+    
+    # Install yq separately (may not be available in all repos)
+    sudo apt-get install -y -qq yq 2>/dev/null || log_warning "yq not available in apt, skipping (can install via snap or binary)"
     
     # Version control
     log_info "Installing version control tools..."
@@ -191,10 +193,8 @@ install_system_deps() {
     
     # Container and virtualization tools (optional)
     log_info "Installing container tools (optional)..."
-    sudo apt-get install -y -qq \
-        docker.io \
-        docker-compose \
-        podman || log_warning "Container tools installation failed (non-critical)"
+    sudo apt-get install -y -qq docker.io docker-compose 2>/dev/null || log_warning "Docker installation failed (non-critical)"
+    sudo apt-get install -y -qq podman 2>/dev/null || log_warning "Podman installation failed (non-critical)"
     
     # Add current user to docker group if docker installed
     if command -v docker &> /dev/null; then
