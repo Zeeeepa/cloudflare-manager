@@ -147,7 +147,7 @@ install_system_deps() {
         nano \
         jq \
         sed \
-        awk \
+        gawk \
         grep \
         tree \
         htop \
