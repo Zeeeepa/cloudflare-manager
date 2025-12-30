@@ -3,6 +3,7 @@ import type { Account, AccountAuth, CFApiResponse, CFWorker, CFSubdomain, Worker
 
 const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
 const DEBUG = process.env.DEBUG_CF_API === 'true';
+const REQUEST_TIMEOUT = 30000; // 30秒超时
 
 // ANSI颜色码
 const colors = {
@@ -68,9 +69,20 @@ export class CloudflareAPI {
     const method = options.method || 'GET';
     const fullUrl = url.startsWith('http') ? url : `${CF_API_BASE}${url}`;
 
+    // 安全地解析 body 用于调试日志
+    let debugBody = options.body;
+    if (typeof options.body === 'string') {
+      try {
+        debugBody = JSON.parse(options.body);
+      } catch {
+        // 如果不是有效的 JSON，保持原样（如纯文本）
+        debugBody = options.body;
+      }
+    }
+
     this.debug(`${colors.blue}${method}${colors.reset} ${fullUrl}`, {
       headers: this.maskSensitiveHeaders(options.headers || this.headers),
-      body: options.body ? (typeof options.body === 'string' ? JSON.parse(options.body) : options.body) : undefined,
+      body: debugBody,
     });
 
     const startTime = Date.now();
@@ -79,6 +91,8 @@ export class CloudflareAPI {
       const response = await ofetch<T>(fullUrl, {
         ...options,
         headers: { ...this.headers, ...options.headers },
+        timeout: REQUEST_TIMEOUT,
+        retry: 0, // 不自动重试，避免长时间等待
       });
 
       const duration = Date.now() - startTime;
@@ -288,4 +302,181 @@ export class CloudflareAPI {
       return false;
     }
   }
+
+  // ==================== KV Namespace API ====================
+
+  // 列出所有 KV Namespaces
+  async listKVNamespaces(): Promise<KVNamespace[]> {
+    const response = await this.apiRequest<CFApiResponse<KVNamespace[]>>(
+      `/accounts/${this.accountId}/storage/kv/namespaces`
+    );
+    if (!response.success) {
+      throw new Error(response.errors[0]?.message || 'Failed to list KV namespaces');
+    }
+    return response.result;
+  }
+
+  // 创建 KV Namespace
+  async createKVNamespace(title: string): Promise<KVNamespace> {
+    const response = await this.apiRequest<CFApiResponse<KVNamespace>>(
+      `/accounts/${this.accountId}/storage/kv/namespaces`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      }
+    );
+    if (!response.success) {
+      throw new Error(response.errors[0]?.message || 'Failed to create KV namespace');
+    }
+    return response.result;
+  }
+
+  // 删除 KV Namespace
+  async deleteKVNamespace(namespaceId: string): Promise<void> {
+    const response = await this.apiRequest<CFApiResponse>(
+      `/accounts/${this.accountId}/storage/kv/namespaces/${namespaceId}`,
+      { method: 'DELETE' }
+    );
+    if (!response.success) {
+      throw new Error(response.errors[0]?.message || 'Failed to delete KV namespace');
+    }
+  }
+
+  // 重命名 KV Namespace
+  async renameKVNamespace(namespaceId: string, title: string): Promise<void> {
+    const response = await this.apiRequest<CFApiResponse>(
+      `/accounts/${this.accountId}/storage/kv/namespaces/${namespaceId}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      }
+    );
+    if (!response.success) {
+      throw new Error(response.errors[0]?.message || 'Failed to rename KV namespace');
+    }
+  }
+
+  // 列出 KV 键
+  async listKVKeys(namespaceId: string, options?: { prefix?: string; limit?: number; cursor?: string }): Promise<{ keys: KVKey[]; cursor?: string }> {
+    const params = new URLSearchParams();
+    if (options?.prefix) params.set('prefix', options.prefix);
+    if (options?.limit) params.set('limit', options.limit.toString());
+    if (options?.cursor) params.set('cursor', options.cursor);
+
+    const queryString = params.toString();
+    const url = `/accounts/${this.accountId}/storage/kv/namespaces/${namespaceId}/keys${queryString ? '?' + queryString : ''}`;
+
+    const response = await this.apiRequest<CFApiResponse<KVKey[]> & { result_info?: { cursor?: string } }>(url);
+    if (!response.success) {
+      throw new Error(response.errors[0]?.message || 'Failed to list KV keys');
+    }
+    return {
+      keys: response.result,
+      cursor: response.result_info?.cursor,
+    };
+  }
+
+  // 读取 KV 值
+  async getKVValue(namespaceId: string, key: string): Promise<string> {
+    const value = await this.apiRequest<string>(
+      `/accounts/${this.accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+      { responseType: 'text' }
+    );
+    return value;
+  }
+
+  // 写入 KV 值
+  async putKVValue(namespaceId: string, key: string, value: string, options?: { expiration?: number; expirationTtl?: number; metadata?: any }): Promise<void> {
+    const formData = new FormData();
+    formData.append('value', value);
+    if (options?.metadata) {
+      formData.append('metadata', JSON.stringify(options.metadata));
+    }
+
+    const params = new URLSearchParams();
+    if (options?.expiration) params.set('expiration', options.expiration.toString());
+    if (options?.expirationTtl) params.set('expiration_ttl', options.expirationTtl.toString());
+
+    const queryString = params.toString();
+    const url = `/accounts/${this.accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}${queryString ? '?' + queryString : ''}`;
+
+    const response = await this.apiRequest<CFApiResponse>(url, {
+      method: 'PUT',
+      body: value,
+      headers: { 'Content-Type': 'text/plain' },
+    });
+    if (!response.success) {
+      throw new Error(response.errors[0]?.message || 'Failed to put KV value');
+    }
+  }
+
+  // 删除 KV 键
+  async deleteKVKey(namespaceId: string, key: string): Promise<void> {
+    const response = await this.apiRequest<CFApiResponse>(
+      `/accounts/${this.accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+      { method: 'DELETE' }
+    );
+    if (!response.success) {
+      throw new Error(response.errors[0]?.message || 'Failed to delete KV key');
+    }
+  }
+
+  // 批量写入 KV
+  async bulkWriteKV(namespaceId: string, kvPairs: Array<{ key: string; value: string; expiration?: number; expirationTtl?: number; metadata?: any }>): Promise<void> {
+    const body = kvPairs.map(pair => ({
+      key: pair.key,
+      value: pair.value,
+      expiration: pair.expiration,
+      expiration_ttl: pair.expirationTtl,
+      metadata: pair.metadata,
+      base64: false,
+    }));
+
+    const response = await this.apiRequest<CFApiResponse>(
+      `/accounts/${this.accountId}/storage/kv/namespaces/${namespaceId}/bulk`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    );
+    if (!response.success) {
+      throw new Error(response.errors[0]?.message || 'Failed to bulk write KV');
+    }
+  }
+
+  // 批量删除 KV
+  async bulkDeleteKV(namespaceId: string, keys: string[]): Promise<void> {
+    const response = await this.apiRequest<CFApiResponse>(
+      `/accounts/${this.accountId}/storage/kv/namespaces/${namespaceId}/bulk`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(keys),
+      }
+    );
+    if (!response.success) {
+      throw new Error(response.errors[0]?.message || 'Failed to bulk delete KV');
+    }
+  }
+
+  // 获取 accountId（供插件使用）
+  getAccountId(): string {
+    return this.accountId;
+  }
+}
+
+// KV 相关类型
+export interface KVNamespace {
+  id: string;
+  title: string;
+  supports_url_encoding?: boolean;
+}
+
+export interface KVKey {
+  name: string;
+  expiration?: number;
+  metadata?: any;
 }

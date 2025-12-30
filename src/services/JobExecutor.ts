@@ -5,17 +5,20 @@ import type {
   Job,
   Task,
   JobConfig,
+  JobType,
   CreateWorkerConfig,
   UpdateWorkerConfig,
   DeleteWorkerConfig,
   QueryWorkerConfig,
   BatchUpdateConfig,
   BatchDeleteConfig,
+  PluginJobConfig,
   TaskProgress,
   Account,
   WorkerTarget,
 } from '../models/types.js';
 import { CloudflareAPI } from './CloudflareAPI.js';
+import { pluginRegistry } from '../core/plugin/index.js';
 
 export class JobExecutor extends EventEmitter {
   private db: Database.Database;
@@ -134,6 +137,65 @@ export class JobExecutor extends EventEmitter {
     return job;
   }
 
+  // 创建插件任务（批量账号操作）
+  createPluginJob(config: PluginJobConfig): Job {
+    const jobId = nanoid();
+    const { accountIds, pluginType, taskType } = config;
+    const fullTaskType = `${pluginType}:${taskType}`;
+
+    // 验证任务类型是否存在
+    if (!pluginRegistry.hasTaskType(fullTaskType)) {
+      throw new Error(`未知的插件任务类型: ${fullTaskType}`);
+    }
+
+    const job: Job = {
+      id: jobId,
+      type: fullTaskType as JobType,
+      status: 'pending',
+      config,
+      totalTasks: accountIds.length,
+      completedTasks: 0,
+      failedTasks: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.db
+      .prepare(
+        `INSERT INTO jobs (id, type, status, config, total_tasks, completed_tasks, failed_tasks, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        job.id,
+        job.type,
+        job.status,
+        JSON.stringify(job.config),
+        job.totalTasks,
+        job.completedTasks,
+        job.failedTasks,
+        job.createdAt
+      );
+
+    // 为每个账号创建 task
+    accountIds.forEach((accountId: string) => {
+      const task: Task = {
+        id: nanoid(),
+        jobId,
+        accountId,
+        status: 'pending',
+        retryCount: 0,
+        createdAt: new Date().toISOString(),
+      };
+      this.db
+        .prepare(
+          `INSERT INTO tasks (id, job_id, account_id, status, retry_count, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run(task.id, task.jobId, task.accountId, task.status, task.retryCount, task.createdAt);
+    });
+
+    return job;
+  }
+
   // 执行任务
   async executeJob(jobId: string): Promise<void> {
     const job = this.getJob(jobId);
@@ -226,7 +288,12 @@ export class JobExecutor extends EventEmitter {
           result = await this.executeBatchDeleteWorker(api, task);
           break;
         default:
-          throw new Error(`Unknown job type: ${job.type}`);
+          // 检查是否为插件任务（格式: pluginType:taskType）
+          if (job.type.includes(':')) {
+            result = await this.executePluginTask(api, job, task);
+          } else {
+            throw new Error(`Unknown job type: ${job.type}`);
+          }
       }
 
       this.updateTaskStatus(task.id, 'success', {
@@ -412,6 +479,29 @@ export class JobExecutor extends EventEmitter {
     await api.deleteWorker(worker.id);
 
     return { workerName, deleted: true };
+  }
+
+  // 执行插件任务
+  private async executePluginTask(
+    api: CloudflareAPI,
+    job: Job,
+    task: Task
+  ): Promise<any> {
+    const config = job.config as PluginJobConfig;
+    const fullTaskType = `${config.pluginType}:${config.taskType}`;
+
+    const taskResult = await pluginRegistry.executeTask(fullTaskType, {
+      api,
+      task,
+      config: config.taskConfig,
+      updateProgress: (progress) => this.updateTaskProgress(task.id, progress),
+    });
+
+    if (!taskResult.success) {
+      throw new Error(taskResult.error || '插件任务执行失败');
+    }
+
+    return taskResult.data;
   }
 
   // 重试失败的tasks

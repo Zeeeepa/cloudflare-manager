@@ -239,6 +239,36 @@ export function createJobsRouter(db: Database.Database, jobExecutor: JobExecutor
     }
   });
 
+  // 通用插件任务（支持 KV、R2 等插件的批量操作）
+  router.post('/plugin', async (req: AuthRequest, res: Response) => {
+    try {
+      const { accountIds, pluginType, taskType, taskConfig } = req.body;
+
+      if (!accountIds || !Array.isArray(accountIds) || accountIds.length === 0) {
+        return res.status(400).json({ error: 'accountIds array required' });
+      }
+
+      if (!pluginType || !taskType) {
+        return res.status(400).json({ error: 'pluginType and taskType required' });
+      }
+
+      const job = jobExecutor.createPluginJob({
+        accountIds,
+        pluginType,
+        taskType,
+        taskConfig: taskConfig || {},
+      });
+
+      jobExecutor.executeJob(job.id).catch(err => {
+        console.error('Plugin job execution error:', err);
+      });
+
+      res.status(202).json(job);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // 重试失败的tasks
   router.post('/:id/retry', async (req: AuthRequest, res: Response) => {
     try {

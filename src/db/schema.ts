@@ -158,7 +158,53 @@ export function initDatabase(dbPath: string): Database.Database {
     console.error('Migration error (jobs batch types):', error);
   }
 
-  // 自动迁移6：插入script_templates初始数据
+  // 自动迁移6：移除jobs表type字段的CHECK约束，支持插件任务类型
+  try {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'").all();
+
+    if (tables.length > 0) {
+      // 检查是否需要迁移（尝试插入插件任务类型）
+      const needsMigration = (() => {
+        try {
+          const testId = 'migration-test-plugin-' + Date.now();
+          db.prepare(`INSERT INTO jobs (id, type, status, config) VALUES (?, 'kv:create', 'pending', '{}')`).run(testId);
+          db.prepare('DELETE FROM jobs WHERE id = ?').run(testId);
+          return false;
+        } catch (e) {
+          return true;
+        }
+      })();
+
+      if (needsMigration) {
+        console.log('Running migration: Removing CHECK constraint from jobs.type to support plugin task types...');
+
+        db.exec(`
+          CREATE TABLE jobs_new (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'partial', 'failed')),
+            config TEXT NOT NULL,
+            total_tasks INTEGER DEFAULT 0,
+            completed_tasks INTEGER DEFAULT 0,
+            failed_tasks INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            started_at DATETIME,
+            completed_at DATETIME
+          );
+
+          INSERT INTO jobs_new SELECT * FROM jobs;
+          DROP TABLE jobs;
+          ALTER TABLE jobs_new RENAME TO jobs;
+        `);
+
+        console.log('Migration completed successfully');
+      }
+    }
+  } catch (error) {
+    console.error('Migration error (jobs plugin types):', error);
+  }
+
+  // 自动迁移7：插入script_templates初始数据
   try {
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='script_templates'").all();
     if (tables.length > 0) {
@@ -271,7 +317,7 @@ export function initDatabase(dbPath: string): Database.Database {
   db.exec(`
     CREATE TABLE IF NOT EXISTS jobs (
       id TEXT PRIMARY KEY,
-      type TEXT NOT NULL CHECK(type IN ('create', 'update', 'delete', 'query', 'list', 'health_check', 'batch_update', 'batch_delete')),
+      type TEXT NOT NULL,
       status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'partial', 'failed')),
       config TEXT NOT NULL,
       total_tasks INTEGER DEFAULT 0,

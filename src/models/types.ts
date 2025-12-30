@@ -34,7 +34,11 @@ export interface Account {
 }
 
 // 任务模型
-export type JobType = 'create' | 'update' | 'delete' | 'query' | 'list' | 'health_check' | 'batch_update' | 'batch_delete';
+// Workers 任务类型
+export type WorkerJobType = 'create' | 'update' | 'delete' | 'query' | 'list' | 'health_check' | 'batch_update' | 'batch_delete';
+// 插件任务类型（格式: plugin:action，如 kv:create）
+export type PluginJobType = `${string}:${string}`;
+export type JobType = WorkerJobType | PluginJobType;
 export type JobStatus = 'pending' | 'running' | 'completed' | 'partial' | 'failed';
 export type TaskStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped';
 
@@ -120,7 +124,14 @@ export interface BatchDeleteConfig {
   workers: WorkerTarget[];
 }
 
-export type JobConfig = CreateWorkerConfig | UpdateWorkerConfig | DeleteWorkerConfig | QueryWorkerConfig | ListWorkersConfig | BatchUpdateConfig | BatchDeleteConfig;
+// 插件任务配置
+export interface PluginJobConfig extends BaseJobConfig {
+  pluginType: string;  // 插件类型，如 'kv'
+  taskType: string;    // 任务类型，如 'create'
+  taskConfig: any;     // 插件任务特定配置
+}
+
+export type JobConfig = CreateWorkerConfig | UpdateWorkerConfig | DeleteWorkerConfig | QueryWorkerConfig | ListWorkersConfig | BatchUpdateConfig | BatchDeleteConfig | PluginJobConfig;
 
 // Worker绑定
 export interface WorkerBinding {

@@ -12,8 +12,12 @@ import { createAccountsRouter } from './routes/accounts.js';
 import { createJobsRouter } from './routes/jobs.js';
 import { createWorkersRouter } from './routes/workers.js';
 import { createTemplatesRouter } from './routes/templates.js';
+import { createPluginsRouter } from './routes/plugins.js';
+import { createKVRouter } from './routes/kv.js';
 import { JobExecutor } from './services/JobExecutor.js';
 import { WorkersService } from './services/WorkersService.js';
+import { registerBuiltinPlugins } from './plugins/index.js';
+import { eventBus } from './core/event/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +30,9 @@ const DB_PATH = process.env.DB_PATH || './data.db';
 // 初始化数据库
 const db = initDatabase(DB_PATH);
 console.log('Database initialized');
+
+// 注册内置插件
+registerBuiltinPlugins();
 
 // 初始化JobExecutor和WorkersService
 const jobExecutor = new JobExecutor(db, 3);
@@ -47,6 +54,12 @@ const io = new SocketIO(httpServer, {
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173', credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 
+// 请求日志（调试用）
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
+});
+
 // 健康检查
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -58,6 +71,8 @@ app.use('/api/accounts', authenticateToken, createAccountsRouter(db));
 app.use('/api/jobs', authenticateToken, createJobsRouter(db, jobExecutor));
 app.use('/api/workers', authenticateToken, createWorkersRouter(workersService));
 app.use('/api/templates', authenticateToken, createTemplatesRouter(db));
+app.use('/api/plugins', authenticateToken, createPluginsRouter());
+app.use('/api/kv', authenticateToken, createKVRouter(db));
 
 // 静态文件服务（前端）
 const publicPath = path.join(__dirname, '..', 'public');
@@ -109,11 +124,13 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket ready for connections`);
+  eventBus.emit('system:startup', { timestamp: new Date().toISOString() });
 });
 
 // 优雅关闭
 process.on('SIGINT', () => {
   console.log('Shutting down gracefully...');
+  eventBus.emit('system:shutdown', { timestamp: new Date().toISOString() });
   httpServer.close(() => {
     db.close();
     console.log('Server closed');
